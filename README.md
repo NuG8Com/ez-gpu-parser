@@ -56,3 +56,12 @@ git clone https://github.com/YOUR_USERNAME/ez-gpu-parser
 cd ez-gpu-parser
 nvcc -O3 ez_parser.cu -o ez_parser
 ./ez_parser
+### Verification
+Tested on Google Colab T4 GPU for IANA #1453765:
+![Colab Verification](colab_verification.png)
+
+**Results:**
+- URIs processed: 1,000,000
+- Valid URIs parsed: 1,000,000/1,000,000 (100%)
+- GPU time: 151.663 ms
+- Throughput: 6.51 M URIs/sec
