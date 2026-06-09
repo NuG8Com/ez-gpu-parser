@@ -1,21 +1,93 @@
-MIT License
 
-Copyright (c) 2026 Roy Fang
+### **3. ez_parser.cu - Updated with Validation**
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Use this version. Added bounds checking per IANA feedback:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+```cpp
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <string.h>
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+#define MAX_URL_LEN 128
+#define MAX_R 63
+#define MAX_DOMAIN 63
+#define MAX_T 15
+#define THREADS 1024
+
+struct EzParsed {
+    char resource[MAX_R + 1];
+    char domain[MAX_DOMAIN + 1];
+    char tld[MAX_T + 1];
+    int valid;
+};
+
+__global__ void parse_ez_kernel(char* urls, EzParsed* results, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+
+    char* url = urls + idx * MAX_URL_LEN;
+    EzParsed* res = &results[idx];
+    res->valid = 0;
+
+    // Check prefix ez://
+    if (url[0]!= 'e' || url[1]!= 'z' || url[2]!= ':' || url[3]!= '/' || url[4]!= '/') return;
+
+    char* start = url + 5;
+    char* dot1 = start;
+    while (*dot1 && *dot1!= '.') dot1++;
+    if (!*dot1) return;
+
+    int r_len = dot1 - start;
+    if (r_len == 0 || r_len > MAX_R) return;
+    memcpy(res->resource, start, r_len);
+    res->resource[r_len] = '\0';
+
+    char* dot2 = dot1 + 1;
+    while (*dot2 && *dot2!= '.') dot2++;
+    if (!*dot2) return;
+
+    int d_len = dot2 - dot1 - 1;
+    if (d_len == 0 || d_len > MAX_DOMAIN) return;
+    memcpy(res->domain, dot1 + 1, d_len);
+    res->domain[d_len] = '\0';
+
+    char* t_start = dot2 + 1;
+    int t_len = strlen(t_start);
+    if (t_len == 0 || t_len > MAX_T) return;
+    memcpy(res->tld, t_start, t_len);
+    res->tld[t_len] = '\0';
+
+    res->valid = 1;
+}
+
+int main() {
+    const int N = 1000000;
+    char* h_urls = (char*)malloc(N * MAX_URL_LEN);
+    EzParsed* h_results = (EzParsed*)malloc(N * sizeof(EzParsed));
+
+    for (int i = 0; i < N; i++) {
+        snprintf(h_urls + i * MAX_URL_LEN, MAX_URL_LEN, "ez://resource%d.NuG8.com", i);
+    }
+
+    char* d_urls; EzParsed* d_results;
+    cudaMalloc(&d_urls, N * MAX_URL_LEN);
+    cudaMalloc(&d_results, N * sizeof(EzParsed));
+    cudaMemcpy(d_urls, h_urls, N * MAX_URL_LEN, cudaMemcpyHostToDevice);
+
+    int blocks = (N + THREADS - 1) / THREADS;
+    parse_ez_kernel<<<blocks, THREADS>>>(d_urls, d_results, N);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(h_results, d_results, N * sizeof(EzParsed), cudaMemcpyDeviceToHost);
+
+    int valid_count = 0;
+    for (int i = 0; i < N; i++) if (h_results[i].valid) valid_count++;
+
+    printf("GPU parsing complete. Valid URIs parsed: %d/%d\n", valid_count, N);
+    printf("Sample: ez://resource999.NuG8.com -> R=%s, domain=%s, T=%s\n",
+           h_results[999].resource, h_results[999].domain, h_results[999].tld);
+
+    cudaFree(d_urls); cudaFree(d_results);
+    free(h_urls); free(h_results);
+    return 0;
+}
