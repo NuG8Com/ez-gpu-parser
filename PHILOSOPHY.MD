@@ -15,5 +15,20 @@ ez:// is designed for parallel GPU processing:
 
 DNS is "looking up a phone book" with CPU.  
 ez:// is "GPU matrix multiplication" for URIs.
+
+**中文**
+DNS誕生於1953年，為串行CPU設計：
+- 字符逐個解析：`.` → `com` → `.` → `nu8` → `.` → `com`
+- 遞歸查詢：Root → TLD → Authoritative伺服器一級查
+- 線性擴展：100億域名 = 100億次串行比較
+
+ez://為並行GPU設計：
+- 固定3段結構：`resource.domain.tld`，零遞歸
+- 128字節固定長度，GPU一次處理100萬URI
+- 常數時間：100億域名 = 1次GPU kernel啟動
+
+DNS是CPU"翻電話簿"。  
+ez://是GPU"矩陣乘法"算URI。
+
 ---
 *This philosophy guides ez:// V0.0 Provisional Registration IANA #1453765*
